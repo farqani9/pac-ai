@@ -6,6 +6,12 @@ of them switch from classic chasing to actively cutting you off.
 
 No build step, no dependencies. Just open `index.html`.
 
+![PAC·AI — the AI at 89% awareness, all four ghosts hunting and predicting 7 tiles ahead](docs/02-ai-debug.png)
+
+> The **GHOST AI** panel shows the model in action: 89% aware, predicting your
+> path 7 tiles ahead, all four ghosts hunting. The white box (debug overlay) is
+> where the AI thinks you're about to be.
+
 ## The idea
 
 Classic Pac-Man ghosts work by aiming at a *target tile* each frame and taking
@@ -30,6 +36,12 @@ the smartest ghosts at where you're *about to be* instead of where you are.
 
 Toggle the debug overlay (**G**) to *see* it: a white box marks the predicted
 tile, lines trace each ghost's target.
+
+## Screenshots
+
+| Title | God mode |
+| --- | --- |
+| ![Title screen](docs/01-title.png) | ![God mode — untouchable Pac-Man](docs/03-god-mode.png) |
 
 ## Play
 
