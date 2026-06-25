@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PAC-AI — Pac-Man with a Learning Brain</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <div class="stat">
+        <span class="label">SCORE</span>
+        <span id="score" class="value">0</span>
+      </div>
+      <div class="stat">
+        <span class="label">HIGH</span>
+        <span id="highscore" class="value">0</span>
+      </div>
+      <div class="stat">
+        <span class="label">LEVEL</span>
+        <span id="level" class="value">1</span>
+      </div>
+      <div class="stat lives">
+        <span class="label">LIVES</span>
+        <span id="lives" class="value">000</span>
+      </div>
+    </header>
+
+    <div id="stage">
+      <canvas id="game"></canvas>
+
+      <!-- Overlay screens -->
+      <div id="overlay" class="overlay">
+        <div class="overlay-card">
+          <h1 class="logo">PAC<span>·</span>AI</h1>
+          <p class="tagline">The ghosts learn how you move.</p>
+          <div id="overlay-body"></div>
+          <button id="startBtn" class="btn">PLAY</button>
+          <p class="hint">Arrows / WASD to move · <b>G</b> debug · <b>P</b> pause</p>
+        </div>
+      </div>
+    </div>
+
+    <aside id="brain">
+      <h2>GHOST&nbsp;AI</h2>
+      <div class="meter">
+        <div class="meter-label">
+          <span>AWARENESS</span>
+          <span id="awarenessPct">0%</span>
+        </div>
+        <div class="bar"><div id="awarenessBar" class="fill"></div></div>
+      </div>
+      <div class="meter">
+        <div class="meter-label">
+          <span>PREDICTION ACCURACY</span>
+          <span id="accuracyPct">—</span>
+        </div>
+        <div class="bar"><div id="accuracyBar" class="fill alt"></div></div>
+      </div>
+      <ul id="brain-stats">
+        <li>Moves observed: <b id="statSamples">0</b></li>
+        <li>Patterns known: <b id="statPatterns">0</b></li>
+        <li>Hunters active: <b id="statHunters">0</b> / 4</li>
+        <li>Lookahead: <b id="statLookahead">0</b> tiles</li>
+      </ul>
+      <p class="brain-note" id="brainNote">Ghosts start dumb. The more you play, the more they predict where you're going and cut you off.</p>
+      <button id="resetBrain" class="btn small ghost">FORGET ME (reset AI)</button>
+    </aside>
+  </div>
+
+  <script src="js/maze.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/pacman.js"></script>
+  <script src="js/ghost.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
