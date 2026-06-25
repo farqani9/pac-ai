@@ -52,14 +52,14 @@ const Game = {
     this.ghosts = makeGhosts();
 
     Input.init();
-    Input.onStart = () => { if (this.state === "TITLE" || this.state === "OVER") this.startGame(); };
+    Input.onStart = () => this.primaryAction();
     Input.onDebug = () => { this.debug = !this.debug; };
     Input.onPause = () => {
       if (this.state === "PLAYING") this.state = "PAUSED";
       else if (this.state === "PAUSED") this.state = "PLAYING";
     };
 
-    document.getElementById("startBtn").onclick = () => this.startGame();
+    document.getElementById("startBtn").onclick = () => this.primaryAction();
     document.getElementById("resetBrain").onclick = () => {
       AI.reset();
       this.updateBrain();
@@ -104,6 +104,12 @@ const Game = {
   },
 
   // ---------- lifecycle ----------
+  // The big overlay button / Enter / Space does the right thing per state.
+  primaryAction() {
+    if (this.state === "WIN") this.advanceLevel();
+    else if (this.state === "TITLE" || this.state === "OVER") this.startGame();
+  },
+
   showTitle() {
     this.state = "TITLE";
     setOverlay(`<div>The ghosts study how you move and learn to cut you off.<br>
@@ -163,9 +169,6 @@ const Game = {
         this.pac.update();
         if (this.pac.deathTimer > 90) this.afterDeath();
         break;
-      case "CLEAR":
-        if (--this.freezeTimer <= 0) this.advanceLevel();
-        break;
     }
   },
 
@@ -197,11 +200,7 @@ const Game = {
     for (const g of this.ghosts) g.update();
     this.checkCollisions();
 
-    if (Maze.cleared()) {
-      this.state = "CLEAR";
-      this.freezeTimer = 80;
-      AI.save();
-    }
+    if (Maze.cleared()) this.winLevel();
 
     if (this.time % 600 < STEP) AI.save();   // periodic checkpoint (~10s)
   },
@@ -308,10 +307,31 @@ const Game = {
     }
   },
 
+  // Board cleared → celebratory win screen that waits for the player.
+  winLevel() {
+    this.state = "WIN";
+    this.releasing = false;
+    if (this.score > this.high) {
+      this.high = this.score;
+      localStorage.setItem("pacai.high", String(this.high));
+    }
+    AI.save();
+    const a = Math.round(AI.awareness * 100);
+    const acc = AI.decisions ? Math.round(AI.accuracy * 100) + "%" : "—";
+    setOverlay(`<div class="big">🏆 MAZE CLEARED!</div>
+      <div>Level ${this.level} · Score ${this.score}</div>
+      <div style="margin-top:10px;color:#ff8cf0">
+        The ghosts are <b>${a}%</b> aware of your habits
+        (${acc} prediction accuracy).</div>
+      <div style="margin-top:6px;color:#7c86b8">Next level: faster ghosts, sharper predictions.</div>`,
+      "NEXT LEVEL ▶");
+  },
+
   advanceLevel() {
     this.level++;
     Maze.reset();
     this.startLevel();
+    hideOverlay();
     this.updateHud();
   },
 
@@ -357,7 +377,6 @@ const Game = {
 
     if (this.state === "READY") this.banner(ctx, "READY!", "#ffe600");
     if (this.state === "PAUSED") this.banner(ctx, "PAUSED", "#00e5ff");
-    if (this.state === "CLEAR") this.banner(ctx, "LEVEL " + this.level + " CLEAR", "#00e5ff");
 
     this.updateBrain();
   },
