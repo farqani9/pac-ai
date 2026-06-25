@@ -38,7 +38,12 @@ tile, lines trace each ghost's target.
 | Move | Arrow keys or `W A S D` |
 | Pause | `P` |
 | Debug overlay | `G` (or `` ` ``) |
+| God mode (untouchable) | `V`, or the on-screen button |
 | Start / restart | `Enter`, `Space`, or the on-screen button |
+
+**God mode** makes Pac-Man untouchable (he turns translucent with a glowing
+aura) so you can roam indefinitely and watch how far the ghosts' awareness
+climbs as they learn your habits — without dying and resetting the round.
 
 Eat all the pellets to clear the level. Power pellets turn the ghosts blue —
 eat them for escalating points (200 → 1600). Watch the **GHOST AI** panel:

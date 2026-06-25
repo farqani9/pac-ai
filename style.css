@@ -194,6 +194,22 @@ canvas#game { display: block; }
   color: var(--muted);
   margin: 14px 0 16px;
 }
+#godMode {
+  width: 100%;
+  margin-bottom: 10px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid rgba(124,134,184,0.45);
+  box-shadow: none;
+  letter-spacing: 1px;
+}
+#godMode:hover { color: var(--text); border-color: var(--text); }
+#godMode.on {
+  background: linear-gradient(180deg, #ffe600, #ffae00);
+  color: #1a1200;
+  border-color: transparent;
+  box-shadow: 0 6px 22px rgba(255,230,0,0.4);
+}
 #resetBrain { width: 100%; }
 
 @media (max-width: 880px) {

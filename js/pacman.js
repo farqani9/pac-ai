@@ -67,7 +67,7 @@ class Pacman {
     if (this.dir !== DIRS.NONE) this.mouth += 0.25;
   }
 
-  draw(ctx) {
+  draw(ctx, god) {
     const r = TILE / 2 + 1;
     ctx.save();
     ctx.translate(this.x, this.y);
@@ -88,6 +88,19 @@ class Pacman {
       ctx.fill();
       ctx.restore();
       return;
+    }
+
+    if (god) {
+      // ghostly aura + see-through body
+      ctx.strokeStyle = "#00e5ff";
+      ctx.lineWidth = 2;
+      ctx.shadowColor = "#00e5ff";
+      ctx.shadowBlur = 16;
+      ctx.beginPath();
+      ctx.arc(0, 0, r + 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 0.5;
     }
 
     const open = (Math.sin(this.mouth) * 0.5 + 0.5) * 0.32 * Math.PI + 0.04;

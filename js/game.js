@@ -21,6 +21,7 @@ const Game = {
   mode: "SCATTER",
   releasing: false,
   debug: false,
+  godMode: false,
 
   score: 0,
   high: 0,
@@ -64,6 +65,25 @@ const Game = {
       this.updateBrain();
       flashNote("AI memory wiped. The ghosts forgot everything about you.");
     };
+
+    // God mode: untouchable Pac-Man so you can watch the AI learn forever.
+    this.godMode = localStorage.getItem("pacai.god") === "1";
+    const godBtn = document.getElementById("godMode");
+    const syncGod = () => {
+      godBtn.textContent = "GOD MODE: " + (this.godMode ? "ON" : "OFF");
+      godBtn.classList.toggle("on", this.godMode);
+    };
+    const toggleGod = () => {
+      this.godMode = !this.godMode;
+      localStorage.setItem("pacai.god", this.godMode ? "1" : "0");
+      syncGod();
+      flashNote(this.godMode
+        ? "God mode ON — ghosts can't catch you. Roam and watch awareness climb."
+        : "God mode OFF — mortal again.");
+    };
+    godBtn.onclick = toggleGod;
+    Input.onGod = toggleGod;
+    syncGod();
 
     window.addEventListener("beforeunload", () => AI.save());
 
@@ -263,7 +283,7 @@ const Game = {
         g.frightened = false;
         this.addScore(this.combo);
         this.combo = Math.min(this.combo * 2, 1600);
-      } else {
+      } else if (!this.godMode) {
         this.killPac();
         return;
       }
@@ -333,7 +353,7 @@ const Game = {
     if (this.state !== "DYING") {
       for (const g of this.ghosts) g.draw(ctx, this.frightFlashing);
     }
-    this.pac.draw(ctx);
+    this.pac.draw(ctx, this.godMode);
 
     if (this.state === "READY") this.banner(ctx, "READY!", "#ffe600");
     if (this.state === "PAUSED") this.banner(ctx, "PAUSED", "#00e5ff");
