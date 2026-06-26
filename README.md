@@ -21,21 +21,34 @@ the smartest ghosts at where you're *about to be* instead of where you are.
 
 ### How the AI works
 
-- **Pattern model** — your directional choices at intersections are recorded as
-  a variable-order (order-1 + order-2) Markov model.
-- **Prediction** — that model is rolled forward several tiles to estimate your
-  future position; "hunter" ghosts target *that* tile.
-- **Accuracy tracking** — every intersection, the model's prediction is compared
-  to your actual move to measure how well it knows you.
+- **Situational pattern model** — your choices at intersections feed a
+  variable-order Markov model whose context includes not just your last 1–2
+  moves but the *direction of the nearest threat*, so it learns reactions like
+  "when chased from the left, this player bolts right."
+- **Prediction** — the model is rolled forward several tiles to estimate your
+  future *path*, not just where you are now.
+- **Coordinated trapping** — instead of every ghost chasing the same tile, the
+  hunters split across four intercept points (deep cut-off, near cut-off, a
+  heatmap ambush of your favourite spot, and a rear pincer). Each ghost is
+  assigned the point it can reach fastest via a tunnel-aware breadth-first
+  search — a real trap, not a clump.
+- **Accuracy tracking** — every intersection, the prediction is compared to your
+  actual move to measure how well it knows you.
 - **Awareness (0 → 100%)** — grows with experience × accuracy. It drives:
-  - how many ghosts hunt by prediction (`0 → 4`),
+  - how many ghosts hunt/coordinate (`0 → 4`),
   - how far ahead the model looks (`2 → 8` tiles),
   - ghost speed and how short their scatter breaks get.
 - **Memory** — the model is saved to `localStorage`, so the ghosts remember your
   habits across sessions. Use **FORGET ME** to wipe it.
 
-Toggle the debug overlay (**G**) to *see* it: a white box marks the predicted
-tile, lines trace each ghost's target.
+Toggle the debug overlay (**G**) to *see* it: a white box and dotted trail mark
+your predicted path, and a coloured line links each hunter to its intercept tile.
+
+![Coordinated trap — four ghosts each assigned a different intercept point around the predicted path](docs/06-trap-verified.png)
+
+> The debug overlay at 92% awareness: all four ghosts coordinate, each line
+> running to a *different* intercept tile around the AI's predicted path
+> (white dotted trail). God Mode is on, so you can watch the trap form.
 
 ## Screenshots
 
