@@ -92,8 +92,11 @@ const Maze = {
       }
       this.pellets.push(row);
     }
-    // Pac-Man starts on an empty tile.
-    this.pellets[this.pacStart.row][this.pacStart.col] = 0;
+    // Pac-Man starts on an empty tile — clear it AND drop it from the count,
+    // otherwise pelletsLeft can never reach 0 and the level never completes.
+    const sr = this.pacStart.row, sc = this.pacStart.col;
+    if (this.pellets[sr][sc] !== 0) this.pelletsLeft--;
+    this.pellets[sr][sc] = 0;
     this.totalPellets = this.pelletsLeft;
   },
 
@@ -127,6 +130,32 @@ const Maze = {
   isTunnelRow(row) {
     // A tile column at the very edge that is walkable marks a tunnel row.
     return this.isWalkable(0, row) || this.isWalkable(COLS - 1, row);
+  },
+
+  // Breadth-first distance from (c0,r0) to every walkable tile, tunnel-aware.
+  // Returns a flat Int16Array indexed r*COLS+c; unreachable tiles are -1.
+  bfsField(c0, r0) {
+    const dist = new Int16Array(COLS * ROWS).fill(-1);
+    const queue = new Int32Array(COLS * ROWS);
+    let head = 0, tail = 0;
+    const start = r0 * COLS + c0;
+    dist[start] = 0;
+    queue[tail++] = start;
+    while (head < tail) {
+      const idx = queue[head++];
+      const c = idx % COLS, r = (idx - c) / COLS, d = dist[idx];
+      for (const dir of MOVE_DIRS) {
+        let nc = c + dir.x, nr = r + dir.y;
+        if (nc < 0) nc = COLS - 1; else if (nc >= COLS) nc = 0; // tunnel wrap
+        if (nr < 0 || nr >= ROWS) continue;
+        if (!this.isWalkable(nc, nr)) continue;
+        const nidx = nr * COLS + nc;
+        if (dist[nidx] !== -1) continue;
+        dist[nidx] = d + 1;
+        queue[tail++] = nidx;
+      }
+    }
+    return dist;
   },
 
   // Pellet interaction. Returns 0 (nothing), 1 (pellet), 2 (power).

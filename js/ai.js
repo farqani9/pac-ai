@@ -1,21 +1,29 @@
 /* ============================================================
  * ai.js — the learning brain.
  *
- * Records the player's directional choices as a variable-order
- * Markov model (order-1 + order-2). From it we:
- *   1. predict where the player will be in N tiles (interception),
+ * Tier 1 (situational prediction): the player's directional choices
+ * feed a variable-order Markov model whose context includes not just
+ * the last 1–2 moves but the *direction of the nearest threat* — so it
+ * learns things like "when chased from the left, this player bolts for
+ * the tunnel". From it we:
+ *   1. predict the player's likely path forward (interception),
  *   2. track prediction accuracy at real intersections,
- *   3. grow an "awareness" value that ramps ghost aggression.
+ *   3. grow an "awareness" value that ramps ghost aggression,
+ *   4. keep a decaying heatmap of where the player likes to be
+ *      (used by the trapping logic in game.js).
  * The model persists in localStorage so the AI remembers you.
  * ============================================================ */
 
-const STORE_KEY = "pacai.brain.v1";
+const STORE_KEY = "pacai.brain.v2";
+const THREAT_RADIUS = 8;   // tiles within which a ghost counts as "the threat"
 
 const AI = {
   model: new Map(),   // contextKey -> Map(dirName -> count)
   history: [],        // recent committed directions (names)
+  heat: null,         // [row][col] decaying visit counts
   lastTile: null,     // {col,row} pac occupied last sample
   prevDir: null,      // direction used to arrive at lastTile
+  lastThreat: "N",    // threat token observed at lastTile
 
   decisions: 0,       // intersections seen
   hits: 0,            // correct predictions at intersections
@@ -23,6 +31,7 @@ const AI = {
   awareness: 0,       // 0..1 overall "how well it knows you"
 
   init() {
+    this._initHeat();
     this.load();
     this._recompute();
   },
@@ -30,8 +39,10 @@ const AI = {
   reset() {
     this.model = new Map();
     this.history = [];
+    this._initHeat();
     this.lastTile = null;
     this.prevDir = null;
+    this.lastThreat = "N";
     this.decisions = 0;
     this.hits = 0;
     this.samples = 0;
@@ -39,12 +50,14 @@ const AI = {
     try { localStorage.removeItem(STORE_KEY); } catch (e) {}
   },
 
+  _initHeat() {
+    this.heat = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+  },
+
   get accuracy() { return this.decisions ? this.hits / this.decisions : 0; },
 
-  // How many tiles ahead we extrapolate (grows with awareness).
   lookahead() { return 2 + Math.round(this.awareness * 6); },
 
-  // How many ghosts hunt by prediction (the rest play classic).
   hunterCount() {
     const a = this.awareness;
     if (a >= 0.85) return 4;
@@ -59,8 +72,23 @@ const AI = {
     this.awareness = experience * (0.35 + 0.65 * this.accuracy);
   },
 
-  // ---- observation: call once per frame with the player ----
-  observe(pac) {
+  // ---- threat token: direction of the nearest dangerous ghost ----
+  threatToken(pac, ghosts) {
+    if (!ghosts) return "N";
+    let best = null, bestD = Infinity;
+    for (const g of ghosts) {
+      if (g.state !== GS.ACTIVE || g.frightened) continue;
+      const dc = g.col() - pac.col(), dr = g.row() - pac.row();
+      const d = Math.abs(dc) + Math.abs(dr);
+      if (d < bestD) { bestD = d; best = { dc, dr }; }
+    }
+    if (!best || bestD > THREAT_RADIUS) return "N";
+    if (Math.abs(best.dc) >= Math.abs(best.dr)) return best.dc > 0 ? "R" : "L";
+    return best.dr > 0 ? "D" : "U";
+  },
+
+  // ---- observation: call once per frame with player + ghosts ----
+  observe(pac, ghosts) {
     if (pac.dir === DIRS.NONE) return;
     const col = pac.col(), row = pac.row();
     if (this.lastTile && this.lastTile.col === col && this.lastTile.row === row) return;
@@ -68,34 +96,42 @@ const AI = {
     const actual = pac.dir.name;
 
     if (this.lastTile && this.prevDir) {
-      // Was the tile we just left a genuine decision point?
       const exits = this._exits(this.lastTile.col, this.lastTile.row, this.prevDir);
       if (exits.length >= 2) {
-        const predicted = this._predict(this.history, exits);
+        const predicted = this._predict(this.history, exits, this.lastThreat);
         this.decisions++;
         if (predicted && predicted.name === actual) this.hits++;
       }
     }
 
-    this._record(this.history, actual);
+    this._record(this.history, actual, this.lastThreat);
     this.history.push(actual);
     if (this.history.length > 4) this.history.shift();
     this.samples++;
+    this._bumpHeat(col, row);
 
     this.lastTile = { col, row };
     this.prevDir = pac.dir;
+    this.lastThreat = this.threatToken(pac, ghosts);
 
     if (this.samples % 4 === 0) this._recompute();
   },
 
-  _record(ctx, dirName) {
+  _record(ctx, dirName, threat) {
     for (let o = 1; o <= 2; o++) {
       if (ctx.length < o) continue;
-      const key = ctx.slice(-o).join(">");
-      let m = this.model.get(key);
-      if (!m) { m = new Map(); this.model.set(key, m); }
-      m.set(dirName, (m.get(dirName) || 0) + 1);
+      this._inc(ctx.slice(-o).join(">"), dirName);
     }
+    if (threat && threat !== "N") {
+      this._inc("T:" + threat + "|" + (ctx[ctx.length - 1] || "_"), dirName);
+      this._inc("T:" + threat, dirName);
+    }
+  },
+
+  _inc(key, dirName) {
+    let m = this.model.get(key);
+    if (!m) { m = new Map(); this.model.set(key, m); }
+    m.set(dirName, (m.get(dirName) || 0) + 1);
   },
 
   // Non-reversing walkable exits from a tile, given arrival direction.
@@ -111,10 +147,16 @@ const AI = {
     return out;
   },
 
-  // Pick the most likely option using the highest-order matching context.
-  _predict(ctx, options) {
-    for (let o = Math.min(2, ctx.length); o >= 1; o--) {
-      const key = ctx.slice(-o).join(">");
+  // Pick the most likely option, trying the most situational context first.
+  _predict(ctx, options, threat) {
+    const last = ctx[ctx.length - 1] || "_";
+    const keys = [];
+    if (threat && threat !== "N") keys.push("T:" + threat + "|" + last);
+    if (ctx.length >= 2) keys.push(ctx.slice(-2).join(">"));
+    if (ctx.length >= 1) keys.push(ctx.slice(-1).join(">"));
+    if (threat && threat !== "N") keys.push("T:" + threat);
+
+    for (const key of keys) {
       const m = this.model.get(key);
       if (!m) continue;
       let best = null, bestC = 0;
@@ -127,35 +169,64 @@ const AI = {
     return null;
   },
 
-  // Roll the player's likely path forward to an interception tile.
-  predictTile(pac) {
+  // Roll the player's likely path forward; returns the list of tiles.
+  predictPath(pac, ghosts) {
     let col = pac.col(), row = pac.row();
     let dir = pac.dir === DIRS.NONE ? DIRS.LEFT : pac.dir;
     const ctx = this.history.slice();
+    const threat = this.threatToken(pac, ghosts);
     const depth = this.lookahead();
+    const path = [];
 
     for (let i = 0; i < depth; i++) {
       const opts = this._exits(col, row, dir);
       if (opts.length === 0) break;
       let nd;
-      if (opts.length === 1) {
-        nd = opts[0];
-      } else {
-        nd = this._predict(ctx, opts) || this._straightOr(opts, dir);
-      }
+      if (opts.length === 1) nd = opts[0];
+      else nd = this._predict(ctx, opts, i === 0 ? threat : "N") || this._straightOr(opts, dir);
       col = ((col + nd.x) % COLS + COLS) % COLS;
       row += nd.y;
       if (row < 0 || row >= ROWS) break;
+      path.push({ col, row });
       ctx.push(nd.name);
       if (ctx.length > 4) ctx.shift();
       dir = nd;
     }
-    return { col, row };
+    return path;
+  },
+
+  predictTile(pac, ghosts) {
+    const p = this.predictPath(pac, ghosts);
+    return p.length ? p[p.length - 1] : { col: pac.col(), row: pac.row() };
   },
 
   _straightOr(options, dir) {
     for (const d of options) if (d === dir) return d;
     return options[0];
+  },
+
+  // ---- heatmap ----
+  _bumpHeat(col, row) {
+    this.heat[row][col] += 1;
+    if (this.samples % 300 === 0) {
+      for (let r = 0; r < ROWS; r++)
+        for (let c = 0; c < COLS; c++) this.heat[r][c] *= 0.85;
+    }
+  },
+
+  // Hottest walkable tile within Chebyshev radius of (col,row).
+  hotTileNear(col, row, rad) {
+    let best = null, bestH = 0.5; // require some real history
+    for (let dr = -rad; dr <= rad; dr++) {
+      for (let dc = -rad; dc <= rad; dc++) {
+        const r = row + dr, c = col + dc;
+        if (r < 0 || r >= ROWS || c < 0 || c >= COLS) continue;
+        if (!Maze.isWalkable(c, r)) continue;
+        const h = this.heat[r][c];
+        if (h > bestH) { bestH = h; best = { col: c, row: r }; }
+      }
+    }
+    return best;
   },
 
   // ---- persistence ----

@@ -37,6 +37,9 @@ const Game = {
   combo: 200,
   freezeTimer: 0,
   predicted: { col: 0, row: 0 },
+  predPath: [],
+  _plan: null,
+  _planTimer: 0,
 
   init() {
     this.canvas = document.getElementById("game");
@@ -174,7 +177,7 @@ const Game = {
 
   updatePlaying() {
     this.pac.update();
-    AI.observe(this.pac);
+    AI.observe(this.pac, this.ghosts);
 
     // eat pellet under Pac-Man
     const v = Maze.eat(this.pac.col(), this.pac.row());
@@ -209,10 +212,13 @@ const Game = {
   assignTargets() {
     const pac = this.pac;
     const blinky = this.ghosts[0];
-    this.predicted = AI.predictTile(pac);
+    this.predPath = AI.predictPath(pac, this.ghosts);
+    this.predicted = this.predPath.length
+      ? this.predPath[this.predPath.length - 1]
+      : { col: pac.col(), row: pac.row() };
     const hunters = AI.hunterCount();
 
-    // classic personality targets
+    // Baseline: everyone plays their classic personality.
     const aheadOf = (n) => ({
       col: pac.col() + pac.dir.x * n,
       row: pac.row() + pac.dir.y * n,
@@ -229,14 +235,61 @@ const Game = {
         return d > 8 ? { col: pac.col(), row: pac.row() } : g.scatterTarget;
       },
     };
+    for (const g of this.ghosts) { g.target = personality[g.name](g); g.hunter = false; }
 
-    this.ghosts.forEach((g, i) => {
-      g.target = personality[g.name](g);
-      // The most-aware ghosts (priority order) hunt the predicted tile.
-      g.hunter = i < hunters && this.mode === "CHASE" && !g.frightened
-        && g.state === GS.ACTIVE;
-      if (g.hunter) g.target = this.predicted;
-    });
+    // Tier 2: the most-aware ghosts coordinate a trap instead of chasing.
+    if (this.mode !== "CHASE" || hunters <= 0) return;
+    const hunterGhosts = [];
+    for (const g of this.ghosts) {
+      if (hunterGhosts.length >= hunters) break;
+      if (g.state === GS.ACTIVE && !g.frightened) hunterGhosts.push(g);
+    }
+    if (hunterGhosts.length === 0) return;
+
+    // Recompute the plan a few times a second (BFS is cheap but not free).
+    if (this._planTimer <= 0 || !this._plan) {
+      this._plan = this.buildTrapPlan(pac, hunterGhosts);
+      this._planTimer = 12;
+    } else {
+      this._planTimer--;
+    }
+    for (const g of hunterGhosts) {
+      const pt = this._plan.get(g);
+      if (pt) { g.target = pt; g.hunter = true; }
+    }
+  },
+
+  // Candidate intercept tiles, most valuable first.
+  trapPoints(pac) {
+    const path = this.predPath;
+    const ahead = this.predicted;                                   // deep cut-off
+    const mid = path.length ? path[Math.floor(path.length / 2)] : ahead; // near cut-off
+    const cur = { col: pac.col(), row: pac.row() };                 // pincer from behind
+    const camp = AI.hotTileNear(pac.col(), pac.row(), 6) || ahead;  // favourite-spot ambush
+    return [ahead, mid, camp, cur];
+  },
+
+  // Assign each hunter the intercept point it can reach fastest, so they
+  // naturally split into a front/back pincer (coordination, not clumping).
+  buildTrapPlan(pac, hunterGhosts) {
+    const points = this.trapPoints(pac);
+    const fields = hunterGhosts.map((g) => Maze.bfsField(g.col(), g.row()));
+    const plan = new Map();
+    for (const pt of points) {
+      if (plan.size >= hunterGhosts.length) break;
+      const idx = pt.row * COLS + pt.col;
+      let best = -1, bestD = Infinity;
+      for (let i = 0; i < hunterGhosts.length; i++) {
+        if (plan.has(hunterGhosts[i])) continue;
+        let d = fields[i][idx];
+        if (d < 0) d = 9999;                 // unreachable (shouldn't happen)
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      if (best >= 0) plan.set(hunterGhosts[best], pt);
+    }
+    // any leftover hunter heads for the predicted tile
+    for (const g of hunterGhosts) if (!plan.has(g)) plan.set(g, this.predicted);
+    return plan;
   },
 
   flipReverse() {
@@ -393,9 +446,14 @@ const Game = {
   },
 
   drawDebug(ctx) {
-    // predicted player tile
-    const p = this.predicted;
     ctx.save();
+    // predicted player path
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    for (const t of this.predPath) {
+      ctx.fillRect(t.col * TILE + 7, t.row * TILE + 7, TILE - 14, TILE - 14);
+    }
+    // predicted endpoint
+    const p = this.predicted;
     ctx.strokeStyle = "rgba(255,255,255,0.9)";
     ctx.lineWidth = 2;
     ctx.strokeRect(p.col * TILE + 2, p.row * TILE + 2, TILE - 4, TILE - 4);
@@ -403,12 +461,21 @@ const Game = {
     ctx.moveTo(this.pac.x, this.pac.y);
     ctx.lineTo(tileCenter(p.col), tileCenter(p.row));
     ctx.stroke();
-    // each ghost's target tile
+    // each ghost's assigned target tile (hunters drawn brighter + linked)
     for (const g of this.ghosts) {
       const t = g.currentTarget();
       ctx.fillStyle = g.color;
-      ctx.globalAlpha = 0.5;
+      ctx.globalAlpha = g.hunter ? 0.85 : 0.4;
       ctx.fillRect(t.col * TILE + 6, t.row * TILE + 6, TILE - 12, TILE - 12);
+      if (g.hunter) {
+        ctx.globalAlpha = 0.6;
+        ctx.strokeStyle = g.color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(g.x, g.y);
+        ctx.lineTo(tileCenter(t.col), tileCenter(t.row));
+        ctx.stroke();
+      }
       ctx.globalAlpha = 1;
     }
     ctx.restore();
@@ -436,10 +503,10 @@ const Game = {
     const note = document.getElementById("brainNote");
     if (note) note.textContent =
       a < 0.15 ? "Ghosts are playing classic. Keep moving — they're watching." :
-      a < 0.38 ? "One ghost now predicts where you're heading." :
-      a < 0.60 ? "Two ghosts intercept your favourite routes." :
-      a < 0.85 ? "Three ghosts coordinate to cut you off." :
-      "All four ghosts hunt by prediction. Good luck.";
+      a < 0.38 ? "One ghost predicts where you're heading and reads the threat around you." :
+      a < 0.60 ? "Two ghosts split up — one cuts ahead, one camps your favourite spot." :
+      a < 0.85 ? "Three ghosts coordinate a pincer: front, flank and behind." :
+      "All four ghosts coordinate to trap you — predicting your escape and closing it.";
   },
 };
 
